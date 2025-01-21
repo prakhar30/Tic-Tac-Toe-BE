@@ -11,7 +11,6 @@
 
 ### Games Table
 - `id`: UUID
-- `name`: String
 - `host_user_id`: UUID (Foreign Key to Users)
 - `status`: Enum (e.g., "waiting", "in_progress", "completed")
 - `current_state`: String (to store the board state, e.g., "XOX O O  ")
@@ -21,7 +20,6 @@
 - `id`: UUID
 - `game_id`: UUID (Foreign Key to Games)
 - `user_id`: UUID (Foreign Key to Users)
-- `joined_at`: Timestamp
 
 ## API Endpoints (gRPC Services)
 
@@ -60,10 +58,9 @@ WebSockets will be used to enable real-time communication between the client and
    - Establish a WebSocket connection to the server when the game page loads.
    - Listen for messages from the server and update the game state accordingly.
 
-
 ## Authentication
-- Use JWT (JSON Web Tokens) for user authentication.
-- Secure endpoints with middleware to check for valid tokens.
+- Use PASETO (Platform-Agnostic Security Tokens) for user authentication instead of JWT.
+- Secure endpoints with middleware to check for valid PASETO tokens using the library at `github.com/o1egl/paseto`.
 
 ## gRPC Server Setup
 - Define proto files for each service.

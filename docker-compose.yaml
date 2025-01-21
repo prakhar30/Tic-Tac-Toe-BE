@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16.2-alpine
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=something_secret
+      - POSTGRES_DB=tictactoe
+    ports:
+      - "5432:5432"
+    volumes:
+      - data-volume:/var/lib/postgresql/data
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports: 
+      - "8080:8080"
+      - "9091:9091"
+    environment:
+      - DB_SOURCE=postgresql://root:something_secret@postgres:5432/tictactoe?sslmode=disable
+      - GRPC_SERVER_ADDRESS=api:9091
+    depends_on:
+      - postgres
+    entrypoint: [ "/app/wait-for.sh", "postgres:5432", "--", "/app/start.sh" ]
+    command: [ "/app/main" ]
+volumes:
+  data-volume:
