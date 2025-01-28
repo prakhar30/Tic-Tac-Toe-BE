@@ -1,0 +1,11 @@
+FROM envoyproxy/envoy:v1.31-latest
+
+COPY envoy.yaml /etc/envoy/envoy.yaml
+
+RUN chmod go+r /etc/envoy/envoy.yaml
+
+COPY pb/tic_tac_toe.pb /etc/envoy/pb/tic_tac_toe.pb
+
+
+ENTRYPOINT [ "/usr/local/bin/envoy" ]
+CMD [ "-c /etc/envoy/envoy.yaml", "-l trace", "--log-path /tmp/envoy_info.log" ]

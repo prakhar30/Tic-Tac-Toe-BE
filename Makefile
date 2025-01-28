@@ -37,7 +37,17 @@ proto:
     --go-grpc_out=pb --go-grpc_opt=paths=source_relative \
     proto/*.proto
 
+protoc-new:
+   protoc -I=. --include_imports --include_source_info --descriptor_set_out=pb/tic_tac_toe.pb proto/*.proto
+
+proto-all:
+	rm -f pb/*.go
+   	protoc --proto_path=proto --go_out=pb --go_opt=paths=source_relative \
+    	--go-grpc_out=pb --go-grpc_opt=paths=source_relative \
+    	proto/*.proto
+   	protoc -I=proto --include_imports --include_source_info --descriptor_set_out=pb/tic_tac_toe.pb proto/*.proto
+
 evans: 
 	evans --host localhost --port 9091 -r repl
 
-.PHONY: dockerpostgres postgres createdb dropdb migrateup migratedown sqlc test server mock proto evans
+.PHONY: dockerpostgres postgres createdb dropdb migrateup migratedown sqlc test server mock proto proto-all evans

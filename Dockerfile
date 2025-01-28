@@ -23,8 +23,8 @@ COPY app.env .
 COPY wait-for.sh .
 COPY db/migration ./db/migration
 
-# Expose port 8080 to the outside world
-EXPOSE 8080
+# Expose port 9091 to the outside world
+EXPOSE 9091
 
 # Command to run the application
 CMD [ "/app/main" ]

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package pb;
+package tic_tac_toe;
 
 import "rpc_create_user.proto";
 import "rpc_login_user.proto";

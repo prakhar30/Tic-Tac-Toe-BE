@@ -19,8 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TicTacToe_CreateUser_FullMethodName = "/pb.TicTacToe/CreateUser"
-	TicTacToe_LoginUser_FullMethodName  = "/pb.TicTacToe/LoginUser"
+	TicTacToe_CreateUser_FullMethodName = "/tic_tac_toe.TicTacToe/CreateUser"
+	TicTacToe_LoginUser_FullMethodName  = "/tic_tac_toe.TicTacToe/LoginUser"
 )
 
 // TicTacToeClient is the client API for TicTacToe service.
@@ -142,7 +142,7 @@ func _TicTacToe_LoginUser_Handler(srv interface{}, ctx context.Context, dec func
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var TicTacToe_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "pb.TicTacToe",
+	ServiceName: "tic_tac_toe.TicTacToe",
 	HandlerType: (*TicTacToeServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

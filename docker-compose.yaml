@@ -14,7 +14,6 @@ services:
       context: .
       dockerfile: Dockerfile
     ports: 
-      - "8080:8080"
       - "9091:9091"
     environment:
       - DB_SOURCE=postgresql://root:something_secret@postgres:5432/tictactoe?sslmode=disable
@@ -23,5 +22,15 @@ services:
       - postgres
     entrypoint: [ "/app/wait-for.sh", "postgres:5432", "--", "/app/start.sh" ]
     command: [ "/app/main" ]
+  
+  gateway-envoy:
+    build:
+      context: .
+      dockerfile: Dockerfile.envoy
+    ports:
+      - '8080:8080'
+    depends_on:
+      - api
+
 volumes:
   data-volume:
