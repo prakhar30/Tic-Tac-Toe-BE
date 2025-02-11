@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -26,12 +27,34 @@ type Client struct {
 	Manager *Manager
 }
 
+// GameError represents a game-related error
+type GameError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// Error implements the error interface
+func (e *GameError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
 // Message represents the WebSocket message structure
 type Message struct {
 	Type   string      `json:"type"`
 	GameID string      `json:"gameId"`
 	Data   interface{} `json:"data"`
+	Error  *GameError  `json:"error,omitempty"`
 }
+
+// Game error codes
+const (
+	ErrGameNotFound     = "GAME_NOT_FOUND"
+	ErrGameFull         = "GAME_FULL"
+	ErrInvalidMove      = "INVALID_MOVE"
+	ErrNotPlayersTurn   = "NOT_PLAYERS_TURN"
+	ErrGameNotReady     = "GAME_NOT_READY"
+	ErrPositionOccupied = "POSITION_OCCUPIED"
+)
 
 // Manager handles WebSocket connections and game states
 type Manager struct {
@@ -62,17 +85,25 @@ func (m *Manager) Start() {
 			m.mutex.Lock()
 			m.clients[client.ID] = client
 			m.mutex.Unlock()
-			log.Info().Str("clientID", client.ID).Msg("New client connected")
+			log.Info().
+				Str("client_id", client.ID).
+				Int("total_clients", len(m.clients)).
+				Msg("Client registered with manager")
 
 		case client := <-m.unregister:
 			m.mutex.Lock()
 			if _, ok := m.clients[client.ID]; ok {
+				log.Info().
+					Str("client_id", client.ID).
+					Str("game_id", client.GameID).
+					Int("remaining_clients", len(m.clients)-1).
+					Msg("Unregistering client")
+
 				delete(m.clients, client.ID)
 				client.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				client.Conn.Close()
 			}
 			m.mutex.Unlock()
-			log.Info().Str("clientID", client.ID).Msg("Client disconnected")
 
 		case message := <-m.broadcast:
 			m.broadcastToGame(message)
@@ -90,8 +121,18 @@ func (m *Manager) broadcastToGame(message *Message) {
 			err := client.Conn.WriteJSON(message)
 			if err != nil {
 				log.Error().Err(err).Str("clientID", client.ID).Msg("Error broadcasting message")
-				client.Conn.Close()
-				m.unregister <- client
+				// Send error message to client before potential disconnect
+				errorMsg := &Message{
+					Type:  "error",
+					Error: &GameError{Code: "BROADCAST_ERROR", Message: "Failed to send message"},
+				}
+				client.Conn.WriteJSON(errorMsg)
+
+				// Only disconnect if it's a fatal error
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					client.Conn.Close()
+					m.unregister <- client
+				}
 			}
 		}
 	}
@@ -102,6 +143,12 @@ func (m *Manager) CreateGame(gameID string, playerID string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	log.Info().
+		Str("game_id", gameID).
+		Str("player_id", playerID).
+		Int("total_games", len(m.games)+1).
+		Msg("Creating new game")
+
 	m.games[gameID] = &GameState{
 		Board:     [9]string{},
 		Players:   make(map[string]string),
@@ -110,53 +157,149 @@ func (m *Manager) CreateGame(gameID string, playerID string) {
 		GameReady: false,
 	}
 	m.games[gameID].Players[playerID] = "X" // First player is X
+
+	log.Debug().
+		Str("game_id", gameID).
+		Str("player_id", playerID).
+		Interface("game_state", m.games[gameID]).
+		Msg("Game created successfully")
 }
 
 // JoinGame adds a player to an existing game
-func (m *Manager) JoinGame(gameID string, playerID string) bool {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if game, exists := m.games[gameID]; exists {
-		if len(game.Players) < 2 {
-			game.Players[playerID] = "O" // Second player is O
-			game.GameReady = true
-			return true
-		}
-	}
-	return false
-}
-
-// MakeMove handles a player's move
-func (m *Manager) MakeMove(gameID string, playerID string, position int) bool {
+func (m *Manager) JoinGame(gameID string, playerID string) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
 	game, exists := m.games[gameID]
-	if !game.GameReady || !exists || game.GameOver || game.Turn != playerID || position < 0 || position > 8 || game.Board[position] != "" {
-		log.Error().Bool("gameReady", game.GameReady).Bool("exists", exists).Bool("gameOver", game.GameOver).Str("gameID", gameID).Str("playerID", playerID).Int("position", position).Msg("Invalid move")
-		return false
+	if !exists {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Msg("Attempted to join non-existent game")
+		return &GameError{Code: ErrGameNotFound, Message: "Game not found"}
+	}
+
+	if len(game.Players) >= 2 {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Interface("existing_players", game.Players).
+			Msg("Attempted to join full game")
+		return &GameError{Code: ErrGameFull, Message: "Game is already full"}
+	}
+
+	game.Players[playerID] = "O" // Second player is O
+	game.GameReady = true
+
+	log.Info().
+		Str("game_id", gameID).
+		Str("player_id", playerID).
+		Interface("game_state", game).
+		Msg("Player joined game successfully")
+
+	return nil
+}
+
+// MakeMove handles a player's move
+func (m *Manager) MakeMove(gameID string, playerID string, position int) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	game, exists := m.games[gameID]
+	if !exists {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Int("position", position).
+			Msg("Attempted move in non-existent game")
+		return &GameError{Code: ErrGameNotFound, Message: "Game not found"}
+	}
+
+	if !game.GameReady {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Bool("game_ready", game.GameReady).
+			Msg("Attempted move in game not ready")
+		return &GameError{Code: ErrGameNotReady, Message: "Game is not ready to start"}
+	}
+
+	if game.GameOver {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Str("winner", game.Winner).
+			Msg("Attempted move in finished game")
+		return &GameError{Code: ErrGameNotReady, Message: "Game is already over"}
+	}
+
+	if game.Turn != playerID {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Str("current_turn", game.Turn).
+			Msg("Player attempted move out of turn")
+		return &GameError{Code: ErrNotPlayersTurn, Message: "Not your turn"}
+	}
+
+	if position < 0 || position > 8 {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Int("position", position).
+			Msg("Invalid board position")
+		return &GameError{Code: ErrInvalidMove, Message: "Invalid position"}
+	}
+
+	if game.Board[position] != "" {
+		log.Warn().
+			Str("game_id", gameID).
+			Str("player_id", playerID).
+			Int("position", position).
+			Str("existing_symbol", game.Board[position]).
+			Msg("Position already occupied")
+		return &GameError{Code: ErrPositionOccupied, Message: "Position already occupied"}
 	}
 
 	game.Board[position] = game.Players[playerID]
+
+	log.Debug().
+		Str("game_id", gameID).
+		Str("player_id", playerID).
+		Int("position", position).
+		Interface("board", game.Board).
+		Msg("Move completed")
 
 	// Check for winner
 	if winner := m.checkWinner(game.Board); winner != "" {
 		game.Winner = playerID
 		game.GameOver = true
+		log.Info().
+			Str("game_id", gameID).
+			Str("winner", playerID).
+			Interface("final_board", game.Board).
+			Msg("Game won")
 	} else if m.isBoardFull(game.Board) {
 		game.GameOver = true
+		log.Info().
+			Str("game_id", gameID).
+			Interface("final_board", game.Board).
+			Msg("Game ended in draw")
 	} else {
 		// Switch turns
 		for pid := range game.Players {
 			if pid != playerID {
 				game.Turn = pid
+				log.Debug().
+					Str("game_id", gameID).
+					Str("next_turn", pid).
+					Msg("Turn switched to next player")
 				break
 			}
 		}
 	}
 
-	return true
+	return nil
 }
 
 // checkWinner determines if there's a winner
