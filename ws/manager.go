@@ -9,11 +9,12 @@ import (
 
 // GameState represents the current state of a Tic-Tac-Toe game
 type GameState struct {
-	Board    [9]string         `json:"board"`
-	Players  map[string]string `json:"players"` // map[playerID]symbol (X or O)
-	Turn     string            `json:"turn"`    // playerID whose turn it is
-	Winner   string            `json:"winner"`  // playerID of winner, empty if no winner
-	GameOver bool              `json:"gameOver"`
+	Board     [9]string         `json:"board"`
+	Players   map[string]string `json:"players"` // map[playerID]symbol (X or O)
+	Turn      string            `json:"turn"`    // playerID whose turn it is
+	Winner    string            `json:"winner"`  // playerID of winner, empty if no winner
+	GameOver  bool              `json:"gameOver"`
+	GameReady bool              `json:"gameReady"`
 }
 
 // Client represents a connected player
@@ -27,10 +28,9 @@ type Client struct {
 
 // Message represents the WebSocket message structure
 type Message struct {
-	Type     string      `json:"type"`
-	GameID   string      `json:"gameId"`
-	PlayerID string      `json:"playerId"`
-	Data     interface{} `json:"data"`
+	Type   string      `json:"type"`
+	GameID string      `json:"gameId"`
+	Data   interface{} `json:"data"`
 }
 
 // Manager handles WebSocket connections and game states
@@ -103,10 +103,11 @@ func (m *Manager) CreateGame(gameID string, playerID string) {
 	defer m.mutex.Unlock()
 
 	m.games[gameID] = &GameState{
-		Board:    [9]string{},
-		Players:  make(map[string]string),
-		Turn:     playerID,
-		GameOver: false,
+		Board:     [9]string{},
+		Players:   make(map[string]string),
+		Turn:      playerID,
+		GameOver:  false,
+		GameReady: false,
 	}
 	m.games[gameID].Players[playerID] = "X" // First player is X
 }
@@ -119,6 +120,7 @@ func (m *Manager) JoinGame(gameID string, playerID string) bool {
 	if game, exists := m.games[gameID]; exists {
 		if len(game.Players) < 2 {
 			game.Players[playerID] = "O" // Second player is O
+			game.GameReady = true
 			return true
 		}
 	}
@@ -131,7 +133,8 @@ func (m *Manager) MakeMove(gameID string, playerID string, position int) bool {
 	defer m.mutex.Unlock()
 
 	game, exists := m.games[gameID]
-	if !exists || game.GameOver || game.Turn != playerID || position < 0 || position > 8 || game.Board[position] != "" {
+	if !game.GameReady || !exists || game.GameOver || game.Turn != playerID || position < 0 || position > 8 || game.Board[position] != "" {
+		log.Error().Bool("gameReady", game.GameReady).Bool("exists", exists).Bool("gameOver", game.GameOver).Str("gameID", gameID).Str("playerID", playerID).Int("position", position).Msg("Invalid move")
 		return false
 	}
 

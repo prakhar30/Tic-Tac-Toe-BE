@@ -95,15 +95,6 @@ func (h *Handler) handleMessages(client *Client) {
 			break
 		}
 
-		// Validate that the message playerID matches the authenticated user
-		if message.PlayerID != client.ID {
-			log.Error().
-				Str("clientID", client.ID).
-				Str("messagePlayerID", message.PlayerID).
-				Msg("PlayerID in message does not match authenticated user")
-			continue
-		}
-
 		// Process message based on type
 		switch message.Type {
 		case "create_game":
