@@ -19,8 +19,8 @@ First, create a WebSocket service to manage the connection and message handling:
 interface WebSocketMessage {
   type: 'create_game' | 'join_game' | 'make_move' | 'game_state';
   gameId: string;
-  playerId: string;
   data?: any;
+  error?: GameError;
 }
 
 interface GameState {
@@ -162,7 +162,6 @@ export function GameProvider({ children, token }: { children: React.ReactNode; t
     ws?.send({
       type: 'create_game',
       gameId,
-      playerId: getUsernameFromToken(token), // Implement this helper function
     });
   };
 
@@ -170,7 +169,6 @@ export function GameProvider({ children, token }: { children: React.ReactNode; t
     ws?.send({
       type: 'join_game',
       gameId,
-      playerId: getUsernameFromToken(token),
     });
   };
 
@@ -180,7 +178,6 @@ export function GameProvider({ children, token }: { children: React.ReactNode; t
     ws?.send({
       type: 'make_move',
       gameId: gameState.gameId,
-      playerId: getUsernameFromToken(token),
       data: { position },
     });
   };

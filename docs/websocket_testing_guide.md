@@ -1,75 +1,34 @@
-# Testing WebSocket Connections with Postman
+# WebSocket Testing Guide
 
-This guide demonstrates how to test the Tic-Tac-Toe WebSocket API using Postman.
-
-## Table of Contents
-- [Prerequisites](#prerequisites)
-- [Setting Up Postman](#setting-up-postman)
-- [Authentication](#authentication)
-- [WebSocket Connection](#websocket-connection)
-- [Testing Game Actions](#testing-game-actions)
-- [Common Test Scenarios](#common-test-scenarios)
-- [Troubleshooting](#troubleshooting)
+This guide provides examples of how to test the WebSocket functionality of the Tic-Tac-Toe game.
 
 ## Prerequisites
 
-1. Install Postman (latest version)
-2. Have the backend server running locally
-3. Have a valid authentication token (obtained through the login API)
+1. The server is running on `ws://localhost:9092/ws`
+2. You have valid authentication tokens for testing (one for each player)
 
-## Setting Up Postman
+## Connection Setup
 
-1. Create a new WebSocket request:
-   - Click "New" → "WebSocket Request"
-   - Enter the WebSocket URL: `ws://localhost:9092/ws`
+1. Connect to the WebSocket endpoint with an authentication token:
+```javascript
+const ws = new WebSocket('ws://localhost:9092/ws');
+ws.onopen = () => {
+  // Send authentication token in headers
+  ws.send(JSON.stringify({
+    Authorization: `Bearer ${token}`
+  }));
+};
+```
 
-2. Set up environment variables:
-   ```
-   WEBSOCKET_URL: ws://localhost:9092/ws
-   AUTH_TOKEN: <your_auth_token>
-   ```
+## Test Scenarios
 
-## Authentication
+### 1. Creating a Game
 
-Before testing WebSocket connections, you need to obtain an authentication token:
-
-1. Create a login request:
-   ```http
-   POST http://localhost:9091/v1/users/login
-   Content-Type: application/json
-
-   {
-     "username": "your_username",
-     "password": "your_password"
-   }
-   ```
-
-2. Save the returned token in your Postman environment:
-   ```javascript
-   // In the "Tests" tab of the login request
-   pm.environment.set("AUTH_TOKEN", pm.response.json().access_token);
-   ```
-
-## WebSocket Connection
-
-1. Configure WebSocket headers:
-   ```
-   Authorization: Bearer {{AUTH_TOKEN}}
-   ```
-
-2. Connect to WebSocket:
-   - Click "Connect"
-   - You should see a "Connected" status
-
-## Testing Game Actions
-
-### 1. Create a New Game
-
+Request:
 ```json
 {
   "type": "create_game",
-  "gameId": "test_game_123",
-  "playerId": "player1"
+  "gameId": "test_game_123"
 }
 ```
 
@@ -81,22 +40,23 @@ Expected Response:
   "data": {
     "board": ["","","","","","","","",""],
     "players": {
-      "player1": "X"
+      "alice": "X"  // Username from token
     },
-    "turn": "player1",
+    "turn": "alice",
     "winner": "",
-    "gameOver": false
+    "gameOver": false,
+    "gameReady": false
   }
 }
 ```
 
-### 2. Join a Game
+### 2. Joining a Game
 
+Request:
 ```json
 {
   "type": "join_game",
-  "gameId": "test_game_123",
-  "playerId": "player2"
+  "gameId": "test_game_123"
 }
 ```
 
@@ -108,23 +68,24 @@ Expected Response:
   "data": {
     "board": ["","","","","","","","",""],
     "players": {
-      "player1": "X",
-      "player2": "O"
+      "alice": "X",
+      "bob": "O"  // Second player's username from token
     },
-    "turn": "player1",
+    "turn": "alice",
     "winner": "",
-    "gameOver": false
+    "gameOver": false,
+    "gameReady": true
   }
 }
 ```
 
-### 3. Make a Move
+### 3. Making a Move
 
+Request:
 ```json
 {
   "type": "make_move",
   "gameId": "test_game_123",
-  "playerId": "player1",
   "data": {
     "position": 4
   }
@@ -139,163 +100,104 @@ Expected Response:
   "data": {
     "board": ["","","","","X","","","",""],
     "players": {
-      "player1": "X",
-      "player2": "O"
+      "alice": "X",
+      "bob": "O"
     },
-    "turn": "player2",
+    "turn": "bob",
     "winner": "",
-    "gameOver": false
+    "gameOver": false,
+    "gameReady": true
   }
 }
 ```
 
-## Common Test Scenarios
+## Testing Error Cases
 
-### 1. Testing Authentication
-
-1. Connect without token:
-   - Expected: Connection refused with 401 Unauthorized
-
-2. Connect with invalid token:
-   - Expected: Connection refused with 401 Unauthorized
-
-3. Connect with expired token:
-   - Expected: Connection refused with 401 Unauthorized
-
-### 2. Testing Game Rules
-
-1. Making a move out of turn:
+### 1. Moving Out of Turn
 ```json
 {
   "type": "make_move",
   "gameId": "test_game_123",
-  "playerId": "player2",  // When it's player1's turn
   "data": {
     "position": 0
   }
 }
 ```
-Expected: Move rejected, no state change
+Expected Error: "NOT_PLAYERS_TURN"
 
-2. Making a move in an occupied position:
+### 2. Moving to Occupied Position
 ```json
 {
   "type": "make_move",
   "gameId": "test_game_123",
-  "playerId": "player2",
   "data": {
-    "position": 4  // Already occupied
+    "position": 4
   }
 }
 ```
-Expected: Move rejected, no state change
+Expected Error: "POSITION_OCCUPIED"
 
-3. Joining a full game:
+### 3. Joining Full Game
 ```json
 {
   "type": "join_game",
-  "gameId": "test_game_123",
-  "playerId": "player3"  // Game already has 2 players
+  "gameId": "test_game_123"
 }
 ```
-Expected: Join rejected, no state change
+Expected Error: "GAME_FULL"
 
-### 3. Testing Win Conditions
+## Testing Win Conditions
 
-1. Horizontal win:
+### 1. Horizontal Win
+Sequence of moves:
 ```json
-// Sequence of moves to test horizontal win
 [
-  {"position": 0, "playerId": "player1"},
-  {"position": 3, "playerId": "player2"},
-  {"position": 1, "playerId": "player1"},
-  {"position": 4, "playerId": "player2"},
-  {"position": 2, "playerId": "player1"}
+  {"position": 0},  // X
+  {"position": 3},  // O
+  {"position": 1},  // X
+  {"position": 4},  // O
+  {"position": 2}   // X wins
 ]
 ```
-Expected: Game over with player1 as winner
 
-2. Vertical win:
+### 2. Vertical Win
+Sequence of moves:
 ```json
-// Sequence of moves to test vertical win
 [
-  {"position": 0, "playerId": "player1"},
-  {"position": 1, "playerId": "player2"},
-  {"position": 3, "playerId": "player1"},
-  {"position": 4, "playerId": "player2"},
-  {"position": 6, "playerId": "player1"}
+  {"position": 0},  // X
+  {"position": 1},  // O
+  {"position": 3},  // X
+  {"position": 4},  // O
+  {"position": 6}   // X wins
 ]
 ```
-Expected: Game over with player1 as winner
 
-3. Diagonal win:
+### 3. Diagonal Win
+Sequence of moves:
 ```json
-// Sequence of moves to test diagonal win
 [
-  {"position": 0, "playerId": "player1"},
-  {"position": 1, "playerId": "player2"},
-  {"position": 4, "playerId": "player1"},
-  {"position": 3, "playerId": "player2"},
-  {"position": 8, "playerId": "player1"}
+  {"position": 0},  // X
+  {"position": 1},  // O
+  {"position": 4},  // X
+  {"position": 3},  // O
+  {"position": 8}   // X wins
 ]
 ```
-Expected: Game over with player1 as winner
 
-## Troubleshooting
+## Cleanup
 
-### Common Issues and Solutions
+1. Close WebSocket connections after testing:
+```javascript
+ws.close();
+```
 
-1. Connection Refused
-   - Check if the server is running
-   - Verify the WebSocket URL
-   - Ensure the port (9092) is not blocked
+2. Verify disconnection events are handled properly.
 
-2. Authentication Failed
-   - Check if the token is valid
-   - Verify the token format in the Authorization header
-   - Check token expiration
+## Tips
 
-3. Messages Not Received
-   - Check WebSocket connection status
-   - Verify message format
-   - Check console for error messages
-
-### Debugging Tips
-
-1. Use Postman Console:
-   - View → Show Postman Console
-   - Monitor WebSocket messages and errors
-
-2. Enable Verbose Logging:
-   ```javascript
-   // In the "Pre-request Script" tab
-   console.log('Sending message:', pm.request.body);
-   ```
-
-3. Test Connection Health:
-   ```javascript
-   // In the "Tests" tab
-   pm.test("WebSocket is connected", () => {
-     pm.expect(pm.response.code).to.equal(101);
-   });
-   ```
-
-## Best Practices
-
-1. Always clean up after testing:
-   - Close WebSocket connections
-   - Remove test game data
-
-2. Test with multiple clients:
-   - Open multiple Postman tabs
-   - Simulate real multiplayer scenarios
-
-3. Validate responses:
-   - Check message types
-   - Verify game state changes
-   - Confirm turn order
-
-4. Test error cases:
-   - Invalid moves
-   - Malformed messages
-   - Connection interruptions 
+1. Use different browser tabs or Postman to test multiplayer scenarios
+2. Keep authentication tokens ready for different test users
+3. Monitor the server logs for detailed information about game state changes
+4. Test reconnection scenarios by temporarily disconnecting clients
+5. Verify error messages are properly displayed to users
+6. Test with invalid game IDs and positions to ensure proper error handling 
