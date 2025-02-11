@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	db "main/db/sqlc"
-
 	"main/gapi"
 	"main/pb"
+	"main/token"
 	"main/utils"
+	"main/ws"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -53,7 +55,18 @@ func main() {
 	waitGroup, waitGroupContext := errgroup.WithContext(ctx)
 
 	store := db.NewStore(connPool)
-	runGPRCServer(waitGroupContext, waitGroup, config, store)
+
+	tokenMaker, err := token.NewPasetoMaker(config.TokenSymmetricKey)
+	if err != nil {
+		log.Fatal().Err(err).Msg("cannot create token maker")
+	}
+
+	// Initialize WebSocket manager
+	wsManager := ws.NewManager()
+	go wsManager.Start()
+
+	runGPRCServer(waitGroupContext, waitGroup, config, store, tokenMaker)
+	runWebSocketServer(waitGroupContext, waitGroup, config, wsManager, tokenMaker)
 
 	err = waitGroup.Wait()
 	if err != nil {
@@ -61,8 +74,8 @@ func main() {
 	}
 }
 
-func runGPRCServer(ctx context.Context, waitGroup *errgroup.Group, config utils.Config, store db.Store) {
-	server, err := gapi.NewServer(config, store)
+func runGPRCServer(ctx context.Context, waitGroup *errgroup.Group, config utils.Config, store db.Store, tokenMaker token.Maker) {
+	server, err := gapi.NewServer(config, store, tokenMaker)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Cannot create server")
 	}
@@ -97,6 +110,44 @@ func runGPRCServer(ctx context.Context, waitGroup *errgroup.Group, config utils.
 		log.Info().Msg("gracefully stopping gRPC server")
 		grpcServer.GracefulStop()
 		log.Info().Msg("gracefully stopped gRPC server")
+		return nil
+	})
+}
+
+func runWebSocketServer(ctx context.Context, waitGroup *errgroup.Group, config utils.Config, wsManager *ws.Manager, tokenMaker token.Maker) {
+	// Create WebSocket auth middleware
+	wsHandler := ws.NewHandler(wsManager, tokenMaker)
+
+	// Create a new HTTP server for WebSocket
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", wsHandler.HandleConnection)
+
+	wsServer := &http.Server{
+		Addr:    config.WebSocketServerAddress,
+		Handler: mux,
+	}
+
+	waitGroup.Go(func() error {
+		log.Info().Str("address", wsServer.Addr).Msg("started WebSocket server")
+
+		if err := wsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("WebSocket server failed to serve")
+			return err
+		}
+
+		return nil
+	})
+
+	waitGroup.Go(func() error {
+		<-ctx.Done()
+		log.Info().Msg("gracefully stopping WebSocket server")
+
+		if err := wsServer.Shutdown(context.Background()); err != nil {
+			log.Error().Err(err).Msg("failed to shutdown WebSocket server gracefully")
+			return err
+		}
+
+		log.Info().Msg("gracefully stopped WebSocket server")
 		return nil
 	})
 }

@@ -15,9 +15,11 @@ services:
       dockerfile: Dockerfile
     ports: 
       - "9091:9091"
+      - "9092:9092"
     environment:
       - DB_SOURCE=postgresql://root:something_secret@postgres:5432/tictactoe?sslmode=disable
       - GRPC_SERVER_ADDRESS=api:9091
+      - WEBSOCKET_SERVER_ADDRESS=api:9092
     depends_on:
       - postgres
     entrypoint: [ "/app/wait-for.sh", "postgres:5432", "--", "/app/start.sh" ]

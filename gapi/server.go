@@ -1,8 +1,6 @@
 package gapi
 
 import (
-	"fmt"
-
 	db "main/db/sqlc"
 	"main/pb"
 	"main/token"
@@ -16,11 +14,11 @@ type Server struct {
 	tokenMaker token.Maker
 }
 
-func NewServer(config utils.Config, store db.Store) (*Server, error) {
-	tokenMaker, err := token.NewPasetoMaker(config.TokenSymmetricKey)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create token maker %w", err)
-	}
+func NewServer(config utils.Config, store db.Store, tokenMaker token.Maker) (*Server, error) {
+	// tokenMaker, err := token.NewPasetoMaker(config.TokenSymmetricKey)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("cannot create token maker %w", err)
+	// }
 
 	server := &Server{
 		config:     config,
