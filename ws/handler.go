@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"fmt"
 	"main/token"
 	"net/http"
 
@@ -38,7 +39,8 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 		Str("url", r.URL.String()).
 		Msg("New WebSocket connection attempt")
 
-	payload, err := h.tokenMaker.AuthenticateUser(r.Header.Get("Auth_token"))
+	formattedToken := fmt.Sprintf("Bearer %s", r.URL.Query().Get("token"))
+	payload, err := h.tokenMaker.AuthenticateUser(formattedToken)
 	if err != nil {
 		log.Error().
 			Err(err).
